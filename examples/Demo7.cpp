@@ -6,40 +6,39 @@ using std::cout;
 using std::endl;
 
 struct Order {
-    std::string m_orderDateTime;
-
-    std::array<std::string, 2> m_coinPair;
-
     enum class BuySell : uint8_t {
         Buy = 0,
         Sell = 1
     };
 
-    enum class TransactionFeeType : uint8_t {
-        USDT = 0,
-        BNB = 1
-    };
-
-    enum class TransactionStatus : int {
+    enum class OrderStatus : int {
         UnknownStatus = -1,
         Canceled = 0,
         Filled = 1
     };
 
+    enum class TransactionFeeType : int {
+        UnknownCoin = -1,
+        USDT = 0,
+        BNB = 1
+    };
+
+    // order row
+    std::string m_orderDateTime;
+    std::array<std::string, 2> m_coinPair;
     BuySell m_buySell = BuySell::Buy;
 
     double m_orderPrice;
     double m_orderAmount;
     double m_avgTradingPrice;
-    double m_quantityFilled;
+    OrderStatus m_orderStatus = OrderStatus::Filled;
 
-    TransactionStatus m_orderStatus = TransactionStatus::Filled;
-
-    // trading
+    // trading row
     std::string m_tradeDateTime;
     double m_tradingPrice;
+    double m_quantityFilled;
     double m_totalPrice;
-    double m_transactionFee;
+    std::string m_transactionFee;
     TransactionFeeType m_transactionFeeType = TransactionFeeType::USDT;
 };
 
@@ -51,7 +50,7 @@ inline std::ostream& operator<<(std::ostream& os, const Order& order) {
     << "amount = " << order.m_orderAmount << ", "
     << "avg trading price = " << order.m_avgTradingPrice << ", "
     << "quantity filled = " << order.m_quantityFilled << ", "
-    << "order status = " << static_cast<int>(order.m_quantityFilled) << ", "
+    << "order status = " << static_cast<int>(order.m_orderStatus) << ", "
     << "trade time = " << order.m_tradeDateTime << ", "
     << "trade price = " << order.m_tradingPrice << ", "
     << "transaction fee = " << order.m_transactionFee << ", "
@@ -60,7 +59,7 @@ inline std::ostream& operator<<(std::ostream& os, const Order& order) {
     return os;
 }
 
-std::pair<int, Order::TransactionStatus> getRowStatus(OpenXLSX::XLWorksheet& wks, int rowIndex) {
+std::pair<int, Order::OrderStatus> getRowStatus(OpenXLSX::XLWorksheet& wks, int rowIndex) {
     const char columnChar = 'A' + (9 - 1); // 'I'
     const std::string cellString = columnChar + std::to_string(rowIndex);
     const OpenXLSX::XLCell& cell = wks.cell(cellString);
@@ -69,13 +68,13 @@ std::pair<int, Order::TransactionStatus> getRowStatus(OpenXLSX::XLWorksheet& wks
             auto statusString = cell.value().get<std::string>();
             if(statusString == "Filled") {
                 std::cout << "Cell " << cellString << " is filled\n";
-                return {rowIndex+2, Order::TransactionStatus::Filled};
+                return {rowIndex+2, Order::OrderStatus::Filled};
             }
             break;
         }
         default: {}
     }
-    return {rowIndex, Order::TransactionStatus::UnknownStatus};
+    return {rowIndex, Order::OrderStatus::UnknownStatus};
 }
 
 int main()
@@ -130,13 +129,35 @@ int main()
             // cout << "Cell " << cellString << ": ";
 
         auto [rowIndexEnd, orderStatus] = getRowStatus(wks, rowIndex);
-        if(orderStatus == Order::TransactionStatus::Filled) {
+        if(orderStatus == Order::OrderStatus::Filled) {
             Order order;
-            order.m_orderDateTime = wks.cell('A' + rowString).value().get<std::string>();
-            order.m_coinPair = {wks.cell('B' + rowString).value().get<std::string>(), ""};
-            order.m_buySell = wks.cell('C' + rowString).value().get<std::string>() == "BUY" ? Order::BuySell::Buy : Order::BuySell::Sell;
-            order.m_orderPrice = std::stod(wks.cell('D' + rowString).value().get<std::string>());
+            rowString = std::to_string(rowIndex);
 
+            // order row
+            order.m_orderDateTime   = wks.cell('A' + rowString).value().get<std::string>();
+            order.m_coinPair        = {wks.cell('B' + rowString).value().get<std::string>(), ""};
+            order.m_buySell         = wks.cell('C' + rowString).value().get<std::string>() == "BUY" ? Order::BuySell::Buy : Order::BuySell::Sell;
+            order.m_orderPrice      = std::stod(wks.cell('D' + rowString).value().get<std::string>());
+            order.m_orderAmount     = std::stod(wks.cell('E' + rowString).value().get<std::string>());
+            order.m_avgTradingPrice = std::stod(wks.cell('F' + rowString).value().get<std::string>());
+            order.m_orderStatus     = wks.cell('I' + rowString).value().get<std::string>() == "Filled" ? Order::OrderStatus::Filled : Order::OrderStatus::Canceled;
+
+            // trading row
+            rowIndex += 2;
+            rowString = std::to_string(rowIndex);
+            order.m_tradeDateTime   = wks.cell('B' + rowString).value().get<std::string>();
+            order.m_tradingPrice    = std::stod(wks.cell('C' + rowString).value().get<std::string>());
+            order.m_quantityFilled  = std::stod(wks.cell('D' + rowString).value().get<std::string>());
+            order.m_totalPrice      = std::stod(wks.cell('E' + rowString).value().get<std::string>());
+            order.m_transactionFee  = wks.cell('F' + rowString).value().get<std::string>();
+
+            if(order.m_transactionFee.substr(order.m_transactionFee.size()-4) == "USDT") {
+                order.m_transactionFeeType = Order::TransactionFeeType::USDT;
+            }
+            else if(order.m_transactionFee.substr(order.m_transactionFee.size()-3) == "BNB") {
+                order.m_transactionFeeType = Order::TransactionFeeType::BNB;
+            }
+            else {}
             cout << order;
         }
 
